@@ -1,0 +1,50 @@
+# ===========================
+# Node Modules
+# ===========================
+node_modules/
+
+# ===========================
+# Environment Variables
+# ===========================
+.env
+.env.*
+!.env.example
+
+# ===========================
+# Upload Folders
+# (DO NOT push uploaded files)
+# ===========================
+upload/
+uploads/
+files/
+public/uploads/
+
+# ===========================
+# Logs
+# ===========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+debug.log
+
+# ===========================
+# Build Output (if any)
+# ===========================
+build/
+out/
+
+# ===========================
+# PM2 / Server Files
+# ===========================
+.pids
+*.pid
+
+# ===========================
+# OS & Editor Files
+# ===========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
