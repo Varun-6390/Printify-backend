@@ -19,6 +19,15 @@ mongoose.connect(URL)
         console.log("Not Connected")
     })
 
+
+app.use(cors({
+  origin: "https://printify-backend-2.onrender.com",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
+
+
 //API
 
 app.use('/api/user',require('./Routes/userRoute'))
