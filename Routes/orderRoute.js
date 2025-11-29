@@ -94,4 +94,90 @@ router.post("/", (req, res) => {
   });
 });
 
+// ===========================
+// GET ALL ORDERS (Admin Page)
+// ===========================
+router.get("/", async (req, res) => {
+  try {
+    const orders = await Order.find().sort("-createdAt");
+    res.json(orders);
+  } catch (err) {
+    console.error("GET ALL ORDERS ERROR:", err);
+    res.status(500).json({ message: "Server error fetching all orders" });
+  }
+});
+
+// ============================================================
+// GET USER ORDERS (User Dashboard)
+// /api/order/order?user=USER_ID
+// ============================================================
+router.get("/order", async (req, res) => {
+  try {
+    const userId = req.query.user;
+    if (!userId) return res.status(400).json({ message: "User ID missing" });
+
+    const orders = await Order.find({ user: userId }).sort("-createdAt");
+    res.json(orders);
+  } catch (err) {
+    console.error("GET USER ORDERS ERROR:", err);
+    res.status(500).json({ message: "Server error fetching user orders" });
+  }
+});
+
+// ===========================
+// GET PENDING ORDERS (Admin)
+// ===========================
+router.get("/pending", async (req, res) => {
+  try {
+    const orders = await Order.find({ "printOptions.status": "pending" }).sort("-createdAt");
+    res.json(orders);
+  } catch (err) {
+    console.error("GET PENDING ORDERS ERROR:", err);
+    res.status(500).json({ message: "Server error fetching pending orders" });
+  }
+});
+
+// ==============================
+// GET COMPLETED ORDERS (Admin)
+// ==============================
+router.get("/complete", async (req, res) => {
+  try {
+    const orders = await Order.find({ "printOptions.status": "completed" })
+      .populate("user")
+      .sort("-createdAt");
+
+    res.json(orders);
+  } catch (err) {
+    console.error("GET COMPLETED ORDERS ERROR:", err);
+    res.status(500).json({ message: "Server error fetching completed orders" });
+  }
+});
+
+// ===========================
+// DEBUG – View all orders raw
+// ===========================
+router.get("/debug", async (req, res) => {
+  try {
+    const orders = await Order.find();
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: "Debug route error" });
+  }
+});
+
+// ============================================
+// SINGLE ORDER BY ID (IMPORTANT: KEEP LAST!)
+// ============================================
+router.get("/:id", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).populate("user");
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    res.json(order);
+  } catch (err) {
+    console.error("GET ORDER BY ID ERROR:", err);
+    res.status(500).json({ message: "Server error fetching order by ID" });
+  }
+});
+
+
 module.exports = router;
