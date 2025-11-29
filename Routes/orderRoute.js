@@ -1,31 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const aws = require("aws-sdk");
 const multer = require("multer");
+const multerS3 = require("multer-s3");
 const { PDFDocument } = require("pdf-lib");
 const axios = require("axios");  // for fetching file from S3
 const Order = require('../Models/Order');
 const Settings = require("../Models/Settings");
-const { S3Client } = require("@aws-sdk/client-s3");
-const multerS3 = require("multer-s3");
-require("dotenv").config();
 
-// AWS S3 CLIENT (v3)
-const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  }
+// AWS CONFIG
+aws.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
 });
 
-// MULTER-S3 STORAGE
+const s3 = new aws.S3();
+
+// S3 STORAGE
 const upload = multer({
   storage: multerS3({
-    s3: s3,
+    s3,
     bucket: process.env.AWS_BUCKET_NAME,
     acl: "public-read",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
+    key: function (req, file, cb) {
       cb(null, `uploads/${Date.now()}_${file.originalname}`);
     }
   })
