@@ -179,5 +179,84 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// ============================
+// GET SINGLE ORDER DETAILS (Admin)
+// /api/order/order/:id
+// ============================
+router.get("/order/:id", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id)
+      .populate("user", "name email mobile");
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    res.json(order);
+  } catch (err) {
+    console.error("GET ORDER BY ID ERROR:", err);
+    res.status(500).json({ message: "Server error fetching order" });
+  }
+});
+
+
+
+// ============================
+// UPDATE ORDER STATUS (Admin)
+// /api/order/status/:id
+// ============================
+router.put("/status/:id", async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { "printOptions.status": status },
+      { new: true }
+    );
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    res.json({ message: "Status updated", order });
+
+  } catch (err) {
+    console.error("UPDATE STATUS ERROR:", err);
+    res.status(500).json({ message: "Server error updating status" });
+  }
+});
+
+
+
+// ============================
+// DELETE ORDER
+// ============================
+router.delete("/:id", async (req, res) => {
+  try {
+    const deleted = await Order.findByIdAndDelete(req.params.id);
+
+    if (!deleted) return res.status(404).json({ message: "Order not found" });
+
+    res.json({ message: "Order deleted" });
+
+  } catch (err) {
+    res.status(500).json({ message: "Error deleting order" });
+  }
+});
+
+
+
+// ============================
+// MUST BE THE LAST ROUTE
+// GET ORDER BY ID (simple fallback)
+// ============================
+router.get("/:id", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ message: "Server error fetching order" });
+  }
+});
 
 module.exports = router;
