@@ -18,11 +18,32 @@ const allowedOrigins = [
   "http://localhost:5173"
 ];
 
+// app.use(
+//   cors({
+//     origin: function (origin, callback) {
+//       if (!origin) return callback(null, true);
+//       if (allowedOrigins.includes(origin)) {
+//         console.log("✅ Allowed Origin:", origin);
+//         callback(null, true);
+//       } else {
+//         console.log("❌ BLOCKED ORIGIN:", origin);
+//         callback(new Error("Not allowed by CORS"));
+//       }
+//     },
+//     credentials: true,
+//   })
+// );
+
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+
+      // Allow ALL Vercel deployments + localhost
+      if (
+        origin.includes("vercel.app") ||
+        origin === "http://localhost:5173"
+      ) {
         console.log("✅ Allowed Origin:", origin);
         callback(null, true);
       } else {
@@ -33,6 +54,7 @@ app.use(
     credentials: true,
   })
 );
+
 
 // Connect MongoDB
 mongoose.connect(URL)
