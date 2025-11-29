@@ -1,58 +1,70 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require("fs");
+const multer = require("multer");
 const { PDFDocument } = require("pdf-lib");
+const axios = require("axios");  // for fetching file from S3
 const Order = require('../Models/Order');
 const Settings = require("../Models/Settings");
+const { S3Client } = require("@aws-sdk/client-s3");
+const multerS3 = require("multer-s3");
+require("dotenv").config();
 
-// =====================
-// MULTER STORAGE CONFIG
-// =====================
-const storage = multer.diskStorage({
-  destination: './upload/',
-  filename: function (req, file, cb) {
-    cb(null, `doc-${Date.now()}${path.extname(file.originalname)}`);
+// AWS S3 CLIENT (v3)
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   }
 });
 
+// MULTER-S3 STORAGE
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 50000000 },
-  fileFilter: function (req, file, cb) {
-    const filetypes = /pdf|doc|docx|jpg|jpeg/;
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = filetypes.test(file.mimetype);
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.AWS_BUCKET_NAME,
+    acl: "public-read",
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: (req, file, cb) => {
+      cb(null, `uploads/${Date.now()}_${file.originalname}`);
+    }
+  })
+}).single("document");
 
-    if (mimetype && extname) return cb(null, true);
-    cb("Error: Only pdf, doc, docx, jpg, jpeg allowed!");
-  }
-}).single('document');
 
-// ORDER CREATE ROUTE (fixed)
+// ORDER CREATE
 router.post('/', (req, res) => {
   upload(req, res, async (err) => {
-    if (err) return res.status(400).json({ message: err });
-    if (!req.file) return res.status(400).json({ message: "No file selected!" });
+
+  console.log("UPLOAD ERROR:", err);
+  console.log("REQ.FILE:", req.file);
+  console.log("REQ.BODY:", req.body);
+
+  if (err) {
+    return res.status(400).json({ message: "Upload failed", error: err.message || err });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ message: "No file selected!", error: "req.file missing" });
+  }
 
     try {
       const printOptions = JSON.parse(req.body.options || "{}");
       const userId = req.body.userId;
       let pageCount = 1;
+      const fileURL = req.file.location;
 
-      // COUNT PDF PAGES IF PDF FILE
+      // PDF PAGE COUNT (download from S3)
       if (req.file.mimetype === "application/pdf") {
-        const dataBuffer = fs.readFileSync(req.file.path);
-        const pdfDoc = await PDFDocument.load(dataBuffer);
-        pageCount = pdfDoc.getPageCount(); // <--- update outer variable (no re-declaration)
+        const response = await axios.get(fileURL, { responseType: "arraybuffer" });
+        const pdfDoc = await PDFDocument.load(response.data);
+        pageCount = pdfDoc.getPageCount();
       }
 
-      // FETCH PRICING SETTINGS
+      // FETCH SETTINGS
       const settings = await Settings.findOne();
       if (!settings) return res.status(500).json({ message: "Pricing settings missing!" });
 
-      // Ensure copies is a number
       const copies = Number(printOptions.copies) || 1;
 
       // Pricing Logic
@@ -68,7 +80,7 @@ router.post('/', (req, res) => {
       // SAVE ORDER
       const newOrder = new Order({
         user: userId,
-        fileURL: req.file.path,
+        fileURL,
         pageCount,
         printOptions: {
           ...printOptions,
@@ -93,114 +105,5 @@ router.post('/', (req, res) => {
   });
 });
 
-
-// =============================
-//  REMAINING ROUTES (UNCHANGED)
-// =============================
-router.get('/', async (req, res) => {
-  try {
-    const orders = await Order.find();
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: 'Error fetching orders.' });
-  }
-});
-
-router.get('/order', async (req, res) => {
-  const user = req.query.user;
-  try {
-    const orders = await Order.find({ user: user }).sort('-createdAt');
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: 'Server Error' });
-  }
-});
-
-router.get('/debug', async (req, res) => {
-  const orders = await Order.find();
-  res.json(orders);
-});
-
-router.get('/pending', async (req, res) => {
-  try {
-    const orders = await Order.find({ "printOptions.status": 'pending' });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: 'Error fetching pending orders.' });
-  }
-});
-
-router.get('/complete', async (req, res) => {
-  try {
-    const orders = await Order.find({ "printOptions.status": 'completed' }).populate({
-      path: "user",
-      populate: [
-        { path: "department" },
-        { path: "section" }
-      ],
-    });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ message: 'Error fetching completed orders.' });
-  }
-});
-
-router.put('/pending/:id', async (req, res) => {
-  try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { "printOptions.status": "completed" },
-      { new: true }
-    );
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ message: 'Error updating order.' });
-  }
-});
-
-router.delete('/:id', async (req, res) => {
-  try {
-    const order = await Order.findByIdAndDelete(req.params.id);
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
-    res.json({ message: "Deleted Successfully" });
-  } catch (err) {
-    res.status(500).json({ message: 'Error deleting order.' });
-  }
-});
-
-router.put("/status/:id", async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { "printOptions.status": status },
-      { new: true }
-    );
-
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    res.json({ message: "Status Updated", order });
-  } catch (err) {
-    res.status(500).json({ message: "Server Error" });
-  }
-});
-
-router.get("/order/:id", async (req, res) => {
-  try {
-    const orderId = req.params.id;
-
-    const order = await Order.findById(orderId)
-      .populate("user", "name email mobile");
-
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    res.json(order);
-  } catch (error) {
-    console.error("Error fetching order:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 module.exports = router;
