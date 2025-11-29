@@ -1,107 +1,97 @@
 const express = require('express');
 const router = express.Router();
-const aws = require("aws-sdk");
+const aws = require("aws-sdk");        // AWS v2
 const multer = require("multer");
-const multerS3 = require("multer-s3");
+const multerS3 = require("multer-s3"); // Works with aws-sdk v2
 const { PDFDocument } = require("pdf-lib");
-const axios = require("axios");  // for fetching file from S3
+const axios = require("axios");
 const Order = require('../Models/Order');
 const Settings = require("../Models/Settings");
 
-// AWS CONFIG
+// AWS CONFIG (v2)
 aws.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
+  region: process.env.AWS_REGION,
 });
 
 const s3 = new aws.S3();
 
-// S3 STORAGE
+// MULTER-S3 STORAGE
 const upload = multer({
   storage: multerS3({
     s3,
     bucket: process.env.AWS_BUCKET_NAME,
     acl: "public-read",
+    contentType: multerS3.AUTO_CONTENT_TYPE,
     key: function (req, file, cb) {
       cb(null, `uploads/${Date.now()}_${file.originalname}`);
-    }
-  })
+    },
+  }),
 }).single("document");
 
-
-// ORDER CREATE
-router.post('/', (req, res) => {
+// =======================
+// ORDER CREATE API
+// =======================
+router.post("/", (req, res) => {
   upload(req, res, async (err) => {
 
-  console.log("UPLOAD ERROR:", err);
-  console.log("REQ.FILE:", req.file);
-  console.log("REQ.BODY:", req.body);
+    console.log("UPLOAD ERR:", err);
+    console.log("FILE:", req.file);
+    console.log("BODY:", req.body);
 
-  if (err) {
-    return res.status(400).json({ message: "Upload failed", error: err.message || err });
-  }
+    if (err) {
+      return res.status(400).json({ message: "Upload failed", error: err });
+    }
 
-  if (!req.file) {
-    return res.status(400).json({ message: "No file selected!", error: "req.file missing" });
-  }
+    if (!req.file) {
+      return res.status(400).json({ message: "File missing" });
+    }
 
     try {
       const printOptions = JSON.parse(req.body.options || "{}");
       const userId = req.body.userId;
+
       let pageCount = 1;
       const fileURL = req.file.location;
 
-      // PDF PAGE COUNT (download from S3)
+      // COUNT PDF PAGES
       if (req.file.mimetype === "application/pdf") {
-        const response = await axios.get(fileURL, { responseType: "arraybuffer" });
-        const pdfDoc = await PDFDocument.load(response.data);
+        const fileResponse = await axios.get(fileURL, { responseType: "arraybuffer" });
+        const pdfDoc = await PDFDocument.load(fileResponse.data);
         pageCount = pdfDoc.getPageCount();
       }
 
-      // FETCH SETTINGS
+      // PRICING SETTINGS
       const settings = await Settings.findOne();
-      if (!settings) return res.status(500).json({ message: "Pricing settings missing!" });
-
       const copies = Number(printOptions.copies) || 1;
 
-      // Pricing Logic
-      let pricePerPage = 0;
-      if (printOptions.color === "bw") {
-        pricePerPage = printOptions.sides === "single" ? settings.bwSingle : settings.bwDouble;
-      } else {
-        pricePerPage = printOptions.sides === "single" ? settings.colorSingle : settings.colorDouble;
-      }
+      let pricePerPage =
+        printOptions.color === "bw"
+          ? (printOptions.sides === "single" ? settings.bwSingle : settings.bwDouble)
+          : (printOptions.sides === "single" ? settings.colorSingle : settings.colorDouble);
 
       const totalCost = pricePerPage * pageCount * copies;
 
       // SAVE ORDER
-      const newOrder = new Order({
+      const order = await Order.create({
         user: userId,
         fileURL,
         pageCount,
         printOptions: {
           ...printOptions,
           price: totalCost,
-          status: "pending"
-        }
+          status: "pending",
+        },
       });
 
-      const savedOrder = await newOrder.save();
-
-      res.status(201).json({
-        message: "Order created successfully!",
-        order: savedOrder,
-        pageCount,
-        totalCost
-      });
+      res.status(201).json({ message: "Order created", order, totalCost });
 
     } catch (error) {
-      console.error("Error creating order:", error);
-      res.status(500).json({ message: "Server error while creating the order." });
+      console.log("CREATE ORDER ERROR:", error);
+      res.status(500).json({ message: "Server error" });
     }
   });
 });
-
 
 module.exports = router;
